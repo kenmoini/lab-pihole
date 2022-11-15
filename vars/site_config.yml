@@ -1,0 +1,40 @@
+---
+# defaults
+timezone: America/New_York
+admin_email: ken@kenmoini.com
+upstream_dns_servers:
+  - 208.67.220.220
+  - 208.67.222.222
+temperature_unit: f
+
+site_config:
+  raza.kemo.labs:
+    install_packages: false
+    configure_firewalld: false
+    configure_selinux: false
+
+    services:
+    - name: dns-pihole-1
+      network:
+        name: lanBridge
+        ip: 192.168.42.11
+        ports:
+        - 53/tcp
+        - 53/udp
+        - 80/tcp
+      resources:
+        limits:
+          cpu: 0.500
+          memory: 1Gi
+    - name: dns-pihole-2
+      network:
+        name: lanBridge
+        ip: 192.168.42.12
+        ports:
+        - 53/tcp
+        - 53/udp
+        - 80/tcp
+      resources:
+        limits:
+          cpu: 0.500
+          memory: 1Gi

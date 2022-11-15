@@ -1,0 +1,94 @@
+#!/bin/bash
+
+set -x
+
+###################################################################################
+# VARIABLES
+###################################################################################
+
+CONTAINER_NAME="{{ service.name }}"
+CONTAINER_SOURCE="{{ container_image }}"
+
+## ENVIRONMENTAL VARIABLES
+ENV_VARS="-e TZ={{ service.timezone | default(timezone) }}"
+ENV_VARS="${ENV_VARS} -e WEBPASSWORD={{ service_passwords[inventory_hostname][service.name] | default(webui_password) }}"
+ENV_VARS="${ENV_VARS} -e VIRTUAL_HOST={{ service.name }}"
+ENV_VARS="${ENV_VARS} -e TEMPERATUREUNIT={{ service.temperature_unit | default(temperature_unit) }}"
+ENV_VARS="${ENV_VARS} -e ADMIN_EMAIL={{ service.admin_email | default(admin_email) }}"
+ENV_VARS="${ENV_VARS} -e PIHOLE_DNS_={{ upstream_dns_servers | join(';') }}"
+ENV_VARS="${ENV_VARS} -e PIHOLE_UID=0"
+ENV_VARS="${ENV_VARS} -e DNSMASQ_USER=root"
+
+NETWORK="--network {{ service.network.name | default('host') }}"
+
+{% if service.network.ports | length > 0 %}
+CONTAINER_PORTS="-p {{ service.network.ports | join(' -p ') }}"
+NETWORK="${NETWORK} ${CONTAINER_PORTS}"
+{% endif %}
+
+{% if service.network.ip is defined %}
+IP_ADDRESS="{{ service.network.ip }}"
+NETWORK="${NETWORK} --ip ${IP_ADDRESS}"
+ENV_VARS="${ENV_VARS} -e ServerIP={{ service.network.ip }}"
+{% endif %}
+
+VOLUME_MOUNT_ONE="{{ service_containers_dir }}/${CONTAINER_NAME}/volumes/etc-pihole:/etc/pihole:z"
+VOLUME_MOUNT_TWO="{{ service_containers_dir }}/${CONTAINER_NAME}/volumes/etc-dnsmasq.d:/etc/dnsmasq.d:z"
+
+###################################################################################
+# EXECUTION PREFLIGHT
+###################################################################################
+
+## Ensure there is an action arguement
+if [ -z "$1" ]; then
+  echo "Need action arguement of 'start', 'restart', or 'stop'!"
+  echo "${0} start|stop|restart"
+  exit 1
+fi
+
+
+################################################################################### SERVICE ACTION SWITCH
+case $1 in
+
+  ################################################################################# RESTART/STOP SERVICE
+  "restart" | "stop" | "start")
+    echo "Stopping container services if running..."
+
+    echo "Stopping ${CONTAINER_NAME} container..."
+    /usr/bin/podman kill ${CONTAINER_NAME}
+
+    echo "Removing ${CONTAINER_NAME} container..."
+    /usr/bin/podman rm -f -i ${CONTAINER_NAME}
+    ;;
+
+esac
+
+case $1 in
+
+  ################################################################################# RESTART/START SERVICE
+  "restart" | "start")
+    sleep 3
+
+    echo "Starting container services..."
+
+    # Deploy ${CONTAINER_NAME} container
+    echo -e "Deploying ${CONTAINER_NAME}...\n"
+
+    /usr/bin/podman create \
+      --name "${CONTAINER_NAME}" \
+      --hostname "${CONTAINER_NAME}" \
+      ${ENV_VARS} \
+      ${NETWORK} \
+      -m {{ service.resources.limits.memory }} --cpus {{ service.resources.limits.cpu }} \
+      -v ${VOLUME_MOUNT_ONE} \
+      -v ${VOLUME_MOUNT_TWO} \
+{% if site_config[inventory_hostname]['configure_selinux'] | default(configure_selinux) %}
+      --security-opt label=type:${CONTAINER_NAME}.process \
+{% endif %}
+      ${CONTAINER_SOURCE}
+
+    /usr/bin/podman start ${CONTAINER_NAME}
+
+    ;;
+
+esac

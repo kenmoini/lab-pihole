@@ -1,0 +1,106 @@
+---
+- name: Deploy the PiHole Container-as-a-Service
+  hosts: all
+  gather_facts: true
+  become: true
+  vars:
+    # service_containers_dir: Where will the files for this service be stored
+    service_containers_dir: /opt/caas
+
+    container_image: docker.io/pihole/pihole:latest
+
+    install_packages: true
+    configure_firewalld: true
+    configure_selinux: true
+
+    # service defaults - can be overridden at the service, runtime, or site_config level
+    timezone: America/New_York
+    admin_email: not@example.com
+    upstream_dns_servers:
+      - 208.67.220.220
+      - 208.67.222.222
+    temperature_unit: f
+    webui_password: setANewPassword
+
+  tasks:
+
+    - name: Read in the site config variables
+      include_vars:
+        file: vars/site_config.yml
+
+    - name: Read in the vaulted variables
+      include_vars:
+        file: vars/vault.yml
+      ignore_errors: true
+
+    - name: Ensure the needed packages are installed
+      when: site_config[inventory_hostname]['install_packages'] | default(install_packages)
+      package:
+        name: "{{ package_item }}"
+        state: latest
+      loop:
+      - podman
+      - udica
+      - firewalld
+      loop_control:
+        loop_var: package_item
+
+    - name: Start FirewallD
+      #when: configure_firewalld|bool
+      when: site_config[inventory_hostname]['configure_firewalld'] | default(configure_firewalld)
+      ansible.builtin.service:
+        name: firewalld
+        state: started
+        enabled: true
+
+    # TODO: Figure out the firewalld bits in a ip bridge container network
+    #- name: Ensure the needed ports are open
+    #  when: configure_firewalld|bool
+    #  when: site_config[inventory_hostname]['configure_firewalld'] | default(configure_firewalld)
+    #  ansible.posix.firewalld:
+    #    state: enabled
+    #    port: "{{ port_item }}"
+    #    permanent: yes
+    #    immediate: yes
+    #  loop:
+    #  - 53/tcp
+    #  - 53/udp
+    #  - 67/udp
+    #  - 80/tcp
+    #  loop_control:
+    #    loop_var: port_item
+
+    - name: Create Service Containers Directory
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+      with_items:
+        - "{{ service_containers_dir }}"
+
+    - name: Pre-pull the image
+      containers.podman.podman_image:
+        name: "{{ container_image }}"
+        pull: yes
+        force: yes
+
+    - name: Run per-service configuration
+      include_tasks: tasks/per-service.yml
+      loop: "{{ site_config[inventory_hostname]['services'] }}"
+      loop_control:
+        loop_var: service
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: Start CaaS
+      ansible.builtin.service:
+        name: "{{ service.name }}"
+        state: restarted
+        enabled: yes
+      loop: "{{ site_config[inventory_hostname]['services'] }}"
+      loop_control:
+        pause: 60
+        loop_var: service

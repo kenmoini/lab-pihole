@@ -1,0 +1,43 @@
+---
+# defaults
+timezone: America/New_York
+admin_email: notme@example.com
+upstream_dns_servers:
+  - 208.67.220.220
+  - 208.67.222.222
+temperature_unit: f
+webui_password: setADifferentPassword
+
+site_config:
+  podman-host.example.com: # this should match the inventory_hostname
+    # you can configure playbook execution for each host
+    install_packages: false
+    configure_firewalld: false
+    configure_selinux: false
+
+    # a list of container services to deploy
+    services:
+    - name: dns-pihole-1
+      network:
+        name: lanBridge # mandatory
+        ip: 192.168.42.11 # optional
+        ports: # optional, but likely needed
+        - 53/tcp
+        - 53/udp
+        - 80/tcp
+      resources:
+        limits:
+          cpu: 0.500
+          memory: 1Gi
+    - name: dns-pihole-2
+      network:
+        name: lanBridge
+        ip: 192.168.42.12
+        ports:
+        - 53/tcp
+        - 53/udp
+        - 80/tcp
+      resources:
+        limits:
+          cpu: 0.500
+          memory: 1Gi

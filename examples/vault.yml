@@ -1,0 +1,4 @@
+service_passwords:
+  podman-host.example.com: # should match the inventory_hostname
+    dns-pihole-1: "password" # k:v pair for the service.name: password
+    dns-pihole-2: "aDifferentPassword"
